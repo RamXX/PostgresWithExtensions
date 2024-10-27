@@ -15,7 +15,7 @@ It performs all the modifications needed in the config files, and runs extensive
 
 Create a `.env` file. You can use the `.env.example` as a reference or rename it. Populate the name parameters needed.
 
-Install the only dependecy: `pip install python-dotenv -U`.
+Install the only dependency: `pip install python-dotenv -U`.
 
 Review the options with `--help`:
 
