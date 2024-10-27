@@ -1,7 +1,7 @@
 # PostgresSQL with Extensions
 
 # Description
-This repo contains a Dockerfile to build and run a container with Postgres 16 and 3 additional extensions, all in their latest versions:
+This repo contains a Python program to build and deploy a Docker container with Postgres 16 and 3 additional extensions, all in their latest versions:
 
 1. pgvecto.rs - for vector storage
 2. Apache AGE - for graphs using OpenCypher
@@ -54,5 +54,3 @@ Examples:
 ```
 
 Everything should be self-explanatory. Open to PRs if you think a feature should be added or you find any bugs.
-
-Done with help from Claude 3.5.
