@@ -7,7 +7,7 @@ This repo contains a Python program to build and deploy a Docker container with 
 2. Apache AGE - for graphs using OpenCypher
 3. TimescaleDB - for time series data
 
-Every operation, from build to run to delete, can be performed from the same Python program.
+Every operation, from build to run to delete, can be executed from the same Python program. Most are compiled from source, and it also includes the tweaks needed in the Postgres config file, with internal restart. `build` and `full-setup` will pull the latest versions available for all the extensions.
 
 It performs all the modifications needed in the config files, and runs extensive testing and verification that each extension is loaded and setup correctly.
 
@@ -53,4 +53,10 @@ Examples:
   postgres_setup.py full-setup               Build image and start container
 ```
 
-Everything should be self-explanatory. Open to PRs if you think a feature should be added or you find any bugs.
+Everything should be self-explanatory. 
+
+### Other Options
+[Database.dev](https://database.dev/) has a flow blown extension installation system, but it doesn't quite fit what I needed, and not all extensions are there. However, they're a more comprehensive option if someone needs that.
+
+### Contributing
+Open to PRs if you think a feature should be added or you find any bugs.
