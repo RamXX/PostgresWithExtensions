@@ -9,9 +9,182 @@ import shlex
 import re
 import socket
 import platform
+import yaml
+from typing import Dict, List
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+class DockerfileGenerator:
+    def __init__(self, config_file: str):
+        with open(config_file, 'r') as f:
+            self.config = yaml.safe_load(f)
+        self.validate_config()
+
+    def validate_config(self):
+        """Basic validation of the configuration file."""
+        required_fields = ['version', 'postgres_version', 'base_image', 'extensions']
+        for field in required_fields:
+            if field not in self.config:
+                raise ValueError(f"Missing required field: {field}")
+
+    def generate_dockerfile(self) -> str:
+        """Generate the Dockerfile content based on the configuration."""
+        lines = []
+        
+        # Base image with comment
+        lines.append("# Use PostgreSQL 16 specifically until the extensions support 17 or newer")
+        lines.append(f"FROM {self.config['base_image']}")
+        lines.append("")
+        
+        # Architecture argument
+        lines.append("# amd64 and arm64 have been tested. Others may work but you need to verify")
+        lines.append("ARG TARGETARCH")
+        lines.append("")
+        
+        # Global dependencies
+        if 'global_dependencies' in self.config:
+            deps = self.config['global_dependencies']
+            if 'apt' in deps:
+                build_deps = deps['apt'].get('build', [])
+                runtime_deps = deps['apt'].get('runtime', [])
+                if build_deps or runtime_deps:
+                    lines.extend(self._generate_apt_install(build_deps + runtime_deps))
+                    lines.append("")
+
+        # Update certificates if needed
+        if 'ca-certificates' in self.config['global_dependencies']['apt'].get('runtime', []):
+            lines.append("RUN update-ca-certificates")
+            lines.append("")
+
+        # Process each extension
+        for ext_name, ext_config in self.config['extensions'].items():
+            lines.extend(self._generate_installation(ext_name, ext_config))
+            lines.append("")
+
+        # Cleanup
+        lines.extend(self._generate_cleanup())
+        
+        # CMD
+        lines.append("# Set the default command to run when starting the container")
+        lines.append('CMD ["postgres"]')
+        
+        return '\n'.join(lines)
+
+    def _generate_apt_install(self, packages: List[str]) -> List[str]:
+        """Generate apt-get install commands."""
+        if not packages:
+            return []
+            
+        return [
+            "RUN apt-get update && apt-get install -y --no-install-recommends \\",
+            "    " + " \\\n    ".join(sorted(packages))
+        ]
+
+    def _generate_installation(self, name: str, config: Dict) -> List[str]:
+        """Generate installation commands for an extension."""
+        lines = [f"# Install {name}"]
+        
+        if config['type'] == 'package':
+            lines.extend(self._generate_package_installation(config))
+        elif config['type'] == 'source':
+            lines.extend(self._generate_source_installation(config))
+        
+        return lines
+
+    def _generate_package_installation(self, config: Dict) -> List[str]:
+        """Generate installation commands for a package-type extension."""
+        pkg_config = config['package']
+        if pkg_config['repository']['type'] == 'github':
+            repo = pkg_config['repository']
+            return [
+                "RUN LATEST_RELEASE=$(wget -qO - "
+                f"https://api.github.com/repos/{repo['owner']}/{repo['repo']}/releases/latest) && \\",
+                "    if [ \"$TARGETARCH\" = \"arm64\" ]; then \\",
+                f"        ARCH_PATTERN=\"{config['architecture_map']['arm64']}\"; \\",
+                "    else \\",
+                f"        ARCH_PATTERN=\"{config['architecture_map']['amd64']}\"; \\",
+                "    fi && \\",
+                "    wget -q $(echo $LATEST_RELEASE | jq -r --arg ARCH \"$ARCH_PATTERN\" '.assets[] | select(.name | contains($ARCH)) | .browser_download_url') && \\",
+                f"    apt install -y --no-install-recommends ./{pkg_config['name']}_*_${{TARGETARCH}}.deb && \\",
+                f"    rm -f {pkg_config['name']}_*_${{TARGETARCH}}.deb"
+            ]
+        else:
+            return []
+
+    def _generate_source_installation(self, config: Dict) -> List[str]:
+        """Generate installation commands for a source-type extension."""
+        src_config = config['source']
+        build_config = config['build']
+        lines = []
+        
+        if src_config['repository']['type'] == 'git':
+            clone_cmd = "git clone"
+            if 'depth' in src_config['repository']:
+                clone_cmd += f" --depth {src_config['repository']['depth']}"
+            if 'branch' in src_config['repository']:
+                clone_cmd += f" --branch {src_config['repository']['branch']}"
+            clone_cmd += f" {src_config['repository']['url']} {build_config['directory']}"
+            
+            # Handle AGE-specific commands
+            if 'age' in build_config['directory']:
+                lines.extend([
+                    f"RUN if [ -d \"{build_config['directory']}\" ]; "
+                    f"then rm -rf {build_config['directory']}; fi && \\",
+                    f"    {clone_cmd} && \\",
+                    f"    cd {build_config['directory']} && \\",
+                    "    make PG_CONFIG=/usr/bin/pg_config && \\",
+                    "    make install PG_CONFIG=/usr/bin/pg_config"
+                ])
+            
+            # Handle TimescaleDB-specific commands
+            elif 'timescaledb' in build_config['directory']:
+                lines.extend([
+                    f"RUN if [ -d \"{build_config['directory']}\" ]; "
+                    f"then rm -rf {build_config['directory']}; fi && \\",
+                    f"    {clone_cmd} && \\",
+                    "    cd /timescaledb && \\",
+                    "    LATEST_TAG=$(curl -s https://api.github.com/repos/timescale/timescaledb/releases/latest | jq -r .tag_name) && \\",
+                    "    git checkout ${LATEST_TAG} && \\",
+                    "    ./bootstrap -DPG_CONFIG=/usr/bin/pg_config -DAPACHE_ONLY=1 && \\",
+                    "    cd build && \\",
+                    "    make && \\",
+                    "    make install"
+                ])
+        
+        return lines
+
+    def _generate_cleanup(self) -> List[str]:
+        """Generate cleanup commands."""
+        # Specific list of packages to remove, matching the original exactly
+        cleanup_packages = [
+            'apt-utils', 'bison', 'build-essential', 'cmake', 'curl', 'flex',
+            'git', 'gnupg', 'libreadline-dev', 'postgresql-server-dev-16', 'zlib1g-dev'
+        ]
+        
+        return [
+            "# Clean up",
+            "RUN apt-get remove -y " + " ".join(sorted(cleanup_packages)) + " && \\",
+            "    apt-get autoremove -y && \\",
+            "    apt-get clean && \\",
+            "    rm -rf /var/lib/apt/lists/*",
+            ""
+        ]
+
+    def get_postgres_config(self) -> Dict:
+        """Extract PostgreSQL configuration from extensions."""
+        config = {
+            'shared_preload_libraries': [],
+            'search_path': []
+        }
+        
+        for ext_config in self.config['extensions'].values():
+            if 'shared_preload_libraries' in ext_config:
+                config['shared_preload_libraries'].extend(ext_config['shared_preload_libraries'])
+            if 'search_path' in ext_config:
+                config['search_path'].extend(ext_config['search_path'])
+                
+        return config
+    
 def is_port_in_use(port):
     """Check if a port is in use."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -83,8 +256,18 @@ def cleanup_buildx():
     except Exception as e:
         logging.warning(f"Error during buildx cleanup: {e}")
 
-def build_image(dockerfile='PostgresWithExtensions.dockerfile', tag='postgres-extensions:latest', platform=None):
+
+def build_image(config_file='postgres-extensions.yaml', tag='postgres-extensions:latest', platform=None):
     """Build the Docker image using buildx."""
+    # Generate Dockerfile content
+    generator = DockerfileGenerator(config_file)
+    dockerfile_content = generator.generate_dockerfile()
+    
+    # Write to temporary Dockerfile
+    dockerfile_path = 'PostgresWithExtensions.dockerfile'
+    with open(dockerfile_path, 'w') as f:
+        f.write(dockerfile_content)
+
     if platform is None:
         platform = get_system_architecture()
     
@@ -102,7 +285,7 @@ def build_image(dockerfile='PostgresWithExtensions.dockerfile', tag='postgres-ex
         # Build the image with verbose output
         build_cmd = [
             'docker', 'buildx', 'build',
-            '-f', dockerfile,
+            '-f', dockerfile_path,  # Use the generated dockerfile path
             '--platform', platform,
             '-t', tag,
             '.',
@@ -119,7 +302,7 @@ def build_image(dockerfile='PostgresWithExtensions.dockerfile', tag='postgres-ex
         )
         
         # Stream the output
-        for line in process.stdout:
+        for line in process.stdout: # type: ignore
             print(line, end='')
         
         process.wait()
@@ -377,13 +560,19 @@ Examples:
   %(prog)s start                    Start a new container with default settings
   %(prog)s remove --remove-volume   Remove container and its volume
   %(prog)s build                    Build the Docker image
+  %(prog)s generate                 Generate Dockerfile from config
   %(prog)s verify                   Verify extension installation
   %(prog)s test                     Run extension tests
   %(prog)s full-setup              Build image and start container
         """
     )
     
-    parser.add_argument('command', choices=['start', 'remove', 'build', 'verify', 'test', 'full-setup'],
+    # Add generate as both an option and a command
+    parser.add_argument('--generate', action='store_true',
+                      help='Generate Dockerfile from config without other actions')
+    
+    parser.add_argument('command', nargs='?',  # Make command optional
+                      choices=['start', 'remove', 'build', 'generate', 'verify', 'test', 'full-setup'],
                       help='Command to execute')
     
     parser.add_argument('--container-name', default='postgres-extensions',
@@ -400,14 +589,15 @@ Examples:
     parser.add_argument('--platform',
                       help='Platform for Docker build (default: auto-detected)')
     
-    parser.add_argument('--dockerfile', default='PostgresWithExtensions.dockerfile',
-                      help='Dockerfile to use (default: PostgresWithExtensions.dockerfile)')
+    parser.add_argument('--config', default='postgres-extensions.yaml',
+                      help='Configuration file to use (default: postgres-extensions.yaml)')
     
     return parser
 
 
 def main():
     # Load environment variables if .env file exists
+    
     if os.path.exists('.env'):
         load_dotenv()
     else:
@@ -417,8 +607,20 @@ def main():
     args = parser.parse_args()
 
     try:
+        if args.generate or args.command == 'generate':
+            generator = DockerfileGenerator(args.config)
+            dockerfile_content = generator.generate_dockerfile()
+            with open('PostgresWithExtensions.dockerfile', 'w') as f:
+                f.write(dockerfile_content)
+            logging.info("Dockerfile generated successfully")
+            return
+
+        # Ensure command is provided for other operations
+        if not args.command:
+            parser.error("Command is required unless --generate is specified")
+
         if args.command == 'build':
-            build_image(dockerfile=args.dockerfile, platform=args.platform)
+            build_image(config_file=args.config, platform=args.platform)
             
         elif args.command == 'remove':
             remove_container(args.container_name, args.remove_volume)
@@ -448,7 +650,7 @@ def main():
                 
         elif args.command == 'full-setup':
             # Build image first
-            build_image(dockerfile=args.dockerfile, platform=args.platform)
+            build_image(config_file=args.config, platform=args.platform)
             
             # Then start container
             port = args.port or os.getenv('POSTGRES_PORT', '5432')

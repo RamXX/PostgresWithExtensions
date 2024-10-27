@@ -1,0 +1,56 @@
+version: '1.0'
+postgres_version: '16'
+base_image: 'postgres:16'
+
+global_dependencies:
+  apt:
+    build:
+      - apt-utils
+      - build-essential
+      - cmake
+      - gnupg
+      - git
+      - curl
+      - postgresql-server-dev-16
+      - flex
+      - bison
+      - libreadline-dev
+      - zlib1g-dev
+    runtime:
+      - ca-certificates
+      - jq
+      - wget
+
+extensions:
+  vectors:
+    type: 'package'
+    package:
+      name: 'vectors-pg16'
+      repository:
+        type: 'github'
+        owner: 'tensorchord'
+        repo: 'pgvecto.rs'
+        asset_pattern: 'vectors-pg16_.*_{arch}.deb'
+    architecture_map:
+      arm64: 'arm64'
+      amd64: 'amd64'
+
+  age:
+    type: 'source'
+    source:
+      repository:
+        type: 'git'
+        url: 'https://github.com/apache/age.git'
+        branch: 'PG16'
+        depth: 1
+    build:
+      directory: '/age'
+
+  timescaledb:
+    type: 'source'
+    source:
+      repository:
+        type: 'git'
+        url: 'https://github.com/timescale/timescaledb.git'
+    build:
+      directory: '/timescaledb'
