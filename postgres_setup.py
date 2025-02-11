@@ -97,16 +97,17 @@ class DockerfileGenerator:
         if pkg_config['repository']['type'] == 'github':
             repo = pkg_config['repository']
             return [
-                "RUN LATEST_RELEASE=$(wget -qO - "
-                f"https://api.github.com/repos/{repo['owner']}/{repo['repo']}/releases/latest) && \\",
-                "    if [ \"$TARGETARCH\" = \"arm64\" ]; then \\",
-                f"        ARCH_PATTERN=\"{config['architecture_map']['arm64']}\"; \\",
+                "RUN LATEST_RELEASE=$(curl -s https://api.github.com/repos/{owner}/{repo}/releases/latest) && \\".format(
+                    owner=repo['owner'], repo=repo['repo']),
+                "    if [ \"${TARGETARCH}\" = \"arm64\" ]; then \\",
+                "        ARCH_PATTERN=\"{arm64}\"; \\".format(arm64=config['architecture_map']['arm64']),
                 "    else \\",
-                f"        ARCH_PATTERN=\"{config['architecture_map']['amd64']}\"; \\",
+                "        ARCH_PATTERN=\"{amd64}\"; \\".format(amd64=config['architecture_map']['amd64']),
                 "    fi && \\",
-                "    wget -q $(echo $LATEST_RELEASE | jq -r --arg ARCH \"$ARCH_PATTERN\" '.assets[] | select(.name | contains($ARCH)) | .browser_download_url') && \\",
-                f"    apt install -y --no-install-recommends ./{pkg_config['name']}_*_${{TARGETARCH}}.deb && \\",
-                f"    rm -f {pkg_config['name']}_*_${{TARGETARCH}}.deb"
+                "    ASSET_URL=$(echo \"$LATEST_RELEASE\" | perl -0777 -pe 's/\"body\":\\s*\"(?:(?!\\\",)[\\s\\S])*?\"\\s*(,)?//gs' | jq -r --arg ARCH \"$ARCH_PATTERN\" '.assets[] | select(.name | contains(\"pg16\") and contains($ARCH)) | .browser_download_url') && \\",
+                "    curl -s -L -o vectors.deb \"$ASSET_URL\" && \\",
+                "    apt install -y --no-install-recommends ./vectors.deb && \\",
+                "    rm -f vectors.deb"
             ]
         else:
             return []

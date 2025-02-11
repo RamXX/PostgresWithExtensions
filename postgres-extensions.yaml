@@ -11,6 +11,7 @@ global_dependencies:
       - gnupg
       - git
       - curl
+      - perl
       - postgresql-server-dev-16
       - flex
       - bison
