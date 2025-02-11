@@ -18,6 +18,7 @@ Clone this repo.
 Create a `.env` file. You can use the `.env.example` as a reference or rename it. Populate the name parameters needed.
 
 Install the dependencies: `pip install python-dotenv yaml -U`.
+(you can now also use `uv`)
 
 Review the options with `--help`:
 
