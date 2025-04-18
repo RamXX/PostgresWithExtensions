@@ -1,0 +1,57 @@
+# Multi-stage Docker build for PostgreSQL 16 with pgvector, Apache AGE, and TimescaleDB
+
+######## Stage 1: Build extensions ########
+FROM postgres:16 AS builder
+
+ENV PG_MAJOR=16
+
+# Install build dependencies and tools (including CA certificates for HTTPS access)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates build-essential cmake flex bison libreadline-dev zlib1g-dev \
+    curl git gnupg jq postgresql-server-dev-$PG_MAJOR \
+ && rm -rf /var/lib/apt/lists/*
+
+# Build Apache AGE
+RUN git clone --branch PG16 --depth 1 https://github.com/apache/age.git /tmp/age \
+ && cd /tmp/age \
+ && make PG_CONFIG=/usr/bin/pg_config \
+ && make install PG_CONFIG=/usr/bin/pg_config
+
+# Build TimescaleDB
+RUN git clone --depth 1 https://github.com/timescale/timescaledb.git /tmp/timescaledb \
+ && cd /tmp/timescaledb \
+ && ./bootstrap -DPG_CONFIG=/usr/bin/pg_config -DAPACHE_ONLY=1 \
+ && cd build \
+ && make \
+ && make install
+
+# Install pgvector from GitHub releases
+RUN ARCH=$(dpkg --print-architecture) \
+ && ASSET_URL=$(curl -s https://api.github.com/repos/tensorchord/pgvecto.rs/releases/latest \
+    | jq -r --arg ARCH "$ARCH" '.assets[] | select(.name | test("vectors-pg16_.*_" + $ARCH + "\\.deb")) | .browser_download_url') \
+ && curl -sSL "$ASSET_URL" -o /tmp/vectors.deb \
+ && dpkg -i /tmp/vectors.deb \
+ && rm /tmp/vectors.deb
+
+######## Stage 2: Final image ########
+FROM postgres:16
+
+ENV PG_MAJOR=16
+
+# Copy built extensions and plugins
+COPY --from=builder /usr/lib/postgresql/$PG_MAJOR/lib/ /usr/lib/postgresql/$PG_MAJOR/lib/
+# Create plugin directory for Apache AGE and symlink the plugin
+RUN mkdir -p /usr/lib/postgresql/$PG_MAJOR/lib/plugins && \
+    ln -s /usr/lib/postgresql/$PG_MAJOR/lib/age.so /usr/lib/postgresql/$PG_MAJOR/lib/plugins/age.so
+COPY --from=builder /usr/share/postgresql/$PG_MAJOR/extension/ /usr/share/postgresql/$PG_MAJOR/extension/
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates jq wget \
+ && rm -rf /var/lib/apt/lists/*
+
+# Add initialization script to configure PostgreSQL
+COPY initdb/99-config.sh /docker-entrypoint-initdb.d/99-config.sh
+RUN chmod +x /docker-entrypoint-initdb.d/99-config.sh
+
+EXPOSE 5432
