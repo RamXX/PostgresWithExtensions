@@ -26,6 +26,15 @@ docker run -d --name postgres-extensions \
   -p 5432:5432 \
   postgres-extensions
 ```
+By default `max_locks_per_transaction` is set to 256 on first initialization. To customize this value, pass the `POSTGRES_MAX_LOCKS_PER_TRANSACTION` environment variable. For example, to set it to 512:
+
+```bash
+docker run -d --name postgres-extensions \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_MAX_LOCKS_PER_TRANSACTION=512 \
+  -p 5432:5432 \
+  postgres-extensions
+```
 
 The first time the container starts, it will initialize the database, configure necessary parameters, and apply the extensions.
 
