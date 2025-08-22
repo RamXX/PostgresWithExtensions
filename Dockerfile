@@ -1,9 +1,9 @@
-# Multi-stage Docker build for PostgreSQL 16 with pgvector, Apache AGE, and TimescaleDB
+# Multi-stage Docker build for PostgreSQL 17 with pgvector, Apache AGE, and TimescaleDB
 
 ######## Stage 1: Build extensions ########
-FROM postgres:16 AS builder
+FROM postgres:17 AS builder
 
-ENV PG_MAJOR=16
+ENV PG_MAJOR=17
 
 # Install build dependencies and tools (including CA certificates for HTTPS access)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Build Apache AGE
-RUN git clone --branch PG16 --depth 1 https://github.com/apache/age.git /tmp/age \
+RUN git clone --branch PG17 --depth 1 https://github.com/apache/age.git /tmp/age \
  && cd /tmp/age \
  && make PG_CONFIG=/usr/bin/pg_config \
  && make install PG_CONFIG=/usr/bin/pg_config
@@ -28,15 +28,15 @@ RUN git clone --depth 1 https://github.com/timescale/timescaledb.git /tmp/timesc
 # Install pgvector from GitHub releases
 RUN ARCH=$(dpkg --print-architecture) \
  && ASSET_URL=$(curl -s https://api.github.com/repos/tensorchord/pgvecto.rs/releases/latest \
-    | jq -r --arg ARCH "$ARCH" '.assets[] | select(.name | test("vectors-pg16_.*_" + $ARCH + "\\.deb")) | .browser_download_url') \
+    | jq -r --arg ARCH "$ARCH" '.assets[] | select(.name | test("vectors-pg17_.*_" + $ARCH + "\\.deb")) | .browser_download_url') \
  && curl -sSL "$ASSET_URL" -o /tmp/vectors.deb \
  && dpkg -i /tmp/vectors.deb \
  && rm /tmp/vectors.deb
 
 ######## Stage 2: Final image ########
-FROM postgres:16
+FROM postgres:17
 
-ENV PG_MAJOR=16
+ENV PG_MAJOR=17
 
 # Copy built extensions and plugins
 COPY --from=builder /usr/lib/postgresql/$PG_MAJOR/lib/ /usr/lib/postgresql/$PG_MAJOR/lib/

@@ -1,9 +1,9 @@
-# Multi-stage Docker build for PostgreSQL 16 with Apache AGE, TimescaleDB, and pgvector proper
+# Multi-stage Docker build for PostgreSQL 17 with Apache AGE, TimescaleDB, and pgvector proper
 
 ######## Stage 1: Build extensions ########
-FROM postgres:16 AS builder
+FROM postgres:17 AS builder
 
-ENV PG_MAJOR=16
+ENV PG_MAJOR=17
 
 # Install build dependencies (including CA certificates for HTTPS and git)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Build Apache AGE
-RUN git clone --branch PG16 --depth 1 https://github.com/apache/age.git /tmp/age \
+RUN git clone --branch PG17 --depth 1 https://github.com/apache/age.git /tmp/age \
  && cd /tmp/age \
  && make PG_CONFIG=/usr/bin/pg_config \
  && make install PG_CONFIG=/usr/bin/pg_config
@@ -32,9 +32,9 @@ RUN git clone --depth 1 https://github.com/pgvector/pgvector.git /tmp/pgvector \
  && make install PG_CONFIG=/usr/bin/pg_config
 
 ######## Stage 2: Final image ########
-FROM postgres:16
+FROM postgres:17
 
-ENV PG_MAJOR=16
+ENV PG_MAJOR=17
 
 # Copy built extensions and libraries
 COPY --from=builder /usr/lib/postgresql/$PG_MAJOR/lib/ /usr/lib/postgresql/$PG_MAJOR/lib/

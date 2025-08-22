@@ -1,7 +1,7 @@
-# PostgreSQL 16 with Extensions (Docker)
+# PostgreSQL 17 with Extensions (Docker)
 
-This repository provides a multi-stage Docker build for PostgreSQL 16 with three extensions built from source, using the latest available versions:
-- [pgvecto.rs](https://github.com/tensorchord/pgvecto.rs) (default) - a high-performance alternative to [pgvector](https://github.com/pgvector/pgvector)
+This repository provides a multi-stage Docker build for PostgreSQL 17 with three extensions built from source, using the latest available versions:
+- [TensorChord](https://github.com/tensorchord/pgvecto.rs) (default) - a high-performance alternative to [pgvector](https://github.com/pgvector/pgvector)
 - [Apache AGE](https://github.com/apache/age) - a graph DB extension for Postgres
 - [TimescaleDB](https://github.com/timescale/timescaledb) - a time-series DB extension for Postgres
 
