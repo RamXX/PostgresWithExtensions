@@ -26,17 +26,83 @@ docker run -d --name postgres-extensions \
   -p 5432:5432 \
   postgres-extensions
 ```
-By default `max_locks_per_transaction` is set to 256 on first initialization. To customize this value, pass the `POSTGRES_MAX_LOCKS_PER_TRANSACTION` environment variable. For example, to set it to 512:
 
+## Configuration
+
+The container is pre-configured with optimized settings for a 16GB RAM / 4 vCPU environment. All settings can be customized via environment variables.
+
+### Default Configuration Values
+
+| Category | Setting | Default | Environment Variable |
+|----------|---------|---------|---------------------|
+| **Memory** | shared_buffers | 4GB | `POSTGRES_SHARED_BUFFERS` |
+| | effective_cache_size | 12GB | `POSTGRES_EFFECTIVE_CACHE_SIZE` |
+| | work_mem | 64MB | `POSTGRES_WORK_MEM` |
+| | maintenance_work_mem | 1GB | `POSTGRES_MAINTENANCE_WORK_MEM` |
+| **Connections** | max_connections | 50 | `POSTGRES_MAX_CONNECTIONS` |
+| | max_worker_processes | 32 | `POSTGRES_MAX_WORKER_PROCESSES` |
+| | max_parallel_workers | 8 | `POSTGRES_MAX_PARALLEL_WORKERS` |
+| | max_parallel_workers_per_gather | 2 | `POSTGRES_MAX_PARALLEL_WORKERS_PER_GATHER` |
+| **Locks** | max_locks_per_transaction | 1024 | `POSTGRES_MAX_LOCKS_PER_TRANSACTION` |
+| | max_pred_locks_per_transaction | 512 | `POSTGRES_MAX_PRED_LOCKS_PER_TRANSACTION` |
+| **WAL** | max_wal_size | 8GB | `POSTGRES_MAX_WAL_SIZE` |
+| | min_wal_size | 2GB | `POSTGRES_MIN_WAL_SIZE` |
+| | checkpoint_timeout | 15min | `POSTGRES_CHECKPOINT_TIMEOUT` |
+| | checkpoint_completion_target | 0.9 | `POSTGRES_CHECKPOINT_COMPLETION_TARGET` |
+| **Autovacuum** | autovacuum_vacuum_scale_factor | 0.02 | `POSTGRES_AUTOVACUUM_VACUUM_SCALE_FACTOR` |
+| | autovacuum_analyze_scale_factor | 0.02 | `POSTGRES_AUTOVACUUM_ANALYZE_SCALE_FACTOR` |
+| | autovacuum_max_workers | 5 | `POSTGRES_AUTOVACUUM_MAX_WORKERS` |
+| | autovacuum_work_mem | 512MB | `POSTGRES_AUTOVACUUM_WORK_MEM` |
+| **I/O** | effective_io_concurrency | 100 | `POSTGRES_EFFECTIVE_IO_CONCURRENCY` |
+| | random_page_cost | 1.1 | `POSTGRES_RANDOM_PAGE_COST` |
+| **TimescaleDB** | max_background_workers | 8 | `TIMESCALEDB_MAX_BACKGROUND_WORKERS` |
+| **VectorChord** | probes | 10 | `VCHORDRQ_PROBES` |
+| | epsilon | 1.9 | `VCHORDRQ_EPSILON` |
+
+### Hardware Profile Examples
+
+**Small instance (8GB RAM / 2 vCPU):**
 ```bash
 docker run -d --name postgres-extensions \
   -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_MAX_LOCKS_PER_TRANSACTION=512 \
+  -e POSTGRES_SHARED_BUFFERS=2GB \
+  -e POSTGRES_EFFECTIVE_CACHE_SIZE=6GB \
+  -e POSTGRES_WORK_MEM=32MB \
+  -e POSTGRES_MAINTENANCE_WORK_MEM=512MB \
+  -e POSTGRES_MAX_CONNECTIONS=30 \
+  -e POSTGRES_MAX_WORKER_PROCESSES=16 \
+  -e POSTGRES_MAX_PARALLEL_WORKERS=4 \
+  -e POSTGRES_AUTOVACUUM_MAX_WORKERS=3 \
+  -e POSTGRES_AUTOVACUUM_WORK_MEM=256MB \
   -p 5432:5432 \
   postgres-extensions
 ```
 
-The first time the container starts, it will initialize the database, configure necessary parameters, and apply the extensions.
+**Large instance (32GB RAM / 8 vCPU):**
+```bash
+docker run -d --name postgres-extensions \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_SHARED_BUFFERS=8GB \
+  -e POSTGRES_EFFECTIVE_CACHE_SIZE=24GB \
+  -e POSTGRES_WORK_MEM=128MB \
+  -e POSTGRES_MAINTENANCE_WORK_MEM=2GB \
+  -e POSTGRES_MAX_CONNECTIONS=100 \
+  -e POSTGRES_MAX_WORKER_PROCESSES=48 \
+  -e POSTGRES_MAX_PARALLEL_WORKERS=16 \
+  -e POSTGRES_MAX_PARALLEL_WORKERS_PER_GATHER=4 \
+  -e POSTGRES_AUTOVACUUM_MAX_WORKERS=8 \
+  -e POSTGRES_AUTOVACUUM_WORK_MEM=1GB \
+  -p 5432:5432 \
+  postgres-extensions
+```
+
+### Lock Configuration Notes
+
+The lock settings are critical for Apache AGE operations. If you encounter "out of shared memory" errors during graph operations:
+
+1. Increase `POSTGRES_MAX_LOCKS_PER_TRANSACTION` (default: 1024)
+2. Increase `POSTGRES_MAX_PRED_LOCKS_PER_TRANSACTION` (default: 512)
+3. Consider breaking bulk DDL/imports into smaller transactions
 
 ## Test the extensions
 
@@ -51,7 +117,7 @@ If you omit `[container_name]`, it defaults to `postgres-extensions`. This scrip
 3. Run basic functionality tests for each extension.
 
 All tests must pass for the setup to be valid.
-  
+
 ## Alternate Build: pgvector proper
 
 Instead of using the pgvecto.rs package, you can build the official `pgvector` extension from source using `Dockerfile.pgvector`:
@@ -72,3 +138,5 @@ Instead of using the pgvecto.rs package, you can build the official `pgvector` e
    ./test-pgvector.sh [container_name]
    ```
    If you omit `[container_name]`, it defaults to `pg-pgvector`.
+
+Note: The pgvector build does not include VectorChord-specific settings but shares all other PostgreSQL optimization settings.
